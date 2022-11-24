@@ -1,5 +1,5 @@
 {
-  "name": "replace-pull-request-body",
+  "name": "find-and-replace-pull-request-body",
   "description": "Github Action replacing workflow related Pull Request body.",
   "license": "MIT",
   "version": "0.0.0",

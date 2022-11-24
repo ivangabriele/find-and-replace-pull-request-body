@@ -1,4 +1,4 @@
-name: Replace Pull Request Body
+name: Find And Replace Pull Request Body
 description: Replace workflow related Pull Request body.
 author: Ivan Gabriele
 branding:

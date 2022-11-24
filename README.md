@@ -1,4 +1,4 @@
-# replace-pull-request-body
+# find-and-replace-pull-request-body
 
 > This action replaces workflow related action Pull Request body.
 
