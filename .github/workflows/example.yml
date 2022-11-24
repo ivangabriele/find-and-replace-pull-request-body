@@ -1,0 +1,16 @@
+name: Example
+
+on: pull_request
+
+jobs:
+  update_pull_request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Update Pull Request Preview URL
+        uses: ./
+        with:
+          githubToken: ${{ secrets.GH_PAT }}
+          find: "_Waiting for deployment..._<!-- AUTOFILLED_PREVIEW_URL -->"
+          replace: "https://example.com/my-preview"

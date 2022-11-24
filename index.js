@@ -10,21 +10,21 @@ try {
   if (!githubToken.length) {
     throw new Error(
       'You forgot to set `githubToken` parameter.\n' +
-        'Please check your setup: https://github.com/ivangabriele/rfind-and-replace-pull-request-body#usage.',
+        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
-  if (!body.length || (!find.length && !replace.length)) {
+  if (!body.length && (!find.length || !replace.length)) {
     throw new Error(
       'You must either set `body` parameter or both `find` and `replace` parameters.\n' +
-        'Please check your setup: https://github.com/ivangabriele/rfind-and-replace-pull-request-body#usage.',
+        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
   if (body.length && (find.length || replace.length)) {
     throw new Error(
       "You can't use `body` parameter while setting `find` and `replace` ones.\n" +
-        'Please check your setup: https://github.com/ivangabriele/rfind-and-replace-pull-request-body#usage.',
+        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
@@ -37,7 +37,7 @@ try {
   if (!body.length && !pullRequestBody) {
     throw new Error(
       'Pull request body is empty. There is nothing to `find` and `replace`.\n' +
-        'Please check your setup: https://github.com/ivangabriele/rfind-and-replace-pull-request-body#usage.',
+        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
