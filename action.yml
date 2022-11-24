@@ -1,0 +1,10 @@
+name: Replace Pull Request Body
+description: Replace workflow related Pull Request body.
+author: Ivan Gabriele
+branding:
+  color: yellow
+  icon: git-pull-request
+
+runs:
+  using: node16
+  main: ./index.dist.js
