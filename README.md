@@ -8,7 +8,7 @@
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/replace-pull-request-body@v1
+        uses: ivangabriele/find-and-replace-pull-request-body@v1
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           body: |
@@ -29,7 +29,7 @@ _Waiting for deployment..._<!-- AUTOFILLED_PREVIEW_URL -->
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/replace-pull-request-body@v1
+        uses: ivangabriele/find-and-replace-pull-request-body@v1
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           find: '_Waiting for deployment..._<!-- AUTOFILLED_PREVIEW_URL -->'
