@@ -5,6 +5,16 @@ branding:
   color: yellow
   icon: git-pull-request
 
+inputs:
+  githubToken:
+    description: "Github Personal Access Token"
+    required: true
+  body:
+    description: "New Pull Request body"
+  find:
+    description: "String to find in Pull Request body"
+  replace:
+    description: "Replacement string in Pull Request body"
 runs:
   using: node16
   main: ./index.dist.js
