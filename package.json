@@ -16,11 +16,11 @@
   },
   "devDependencies": {
     "@ivangabriele/prettier-config": "3.1.0",
-    "@rollup/plugin-commonjs": "23.0.2",
-    "@rollup/plugin-json": "5.0.1",
+    "@rollup/plugin-commonjs": "23.0.3",
+    "@rollup/plugin-json": "5.0.2",
     "@rollup/plugin-node-resolve": "15.0.1",
     "prettier": "2.8.0",
-    "rollup": "3.4.0"
+    "rollup": "3.5.0"
   },
   "prettier": "@ivangabriele/prettier-config"
 }
