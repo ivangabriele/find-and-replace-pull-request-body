@@ -51,10 +51,8 @@ try {
 
   if (isHtmlCommentTag === 'true') {
     const findRegexp = new RegExp(`\<\!\-\- ${find} \-\-\>.*\<\!\-\- ${find} \-\-\>`, 's')
-
-    const nextPullRequestBody = body.length
-      ? body
-      : `<!-- ${find} -->\n${pullRequestBody.replace(findRegexp, replace)}\n<!-- ${find} -->`
+    const replacement = body.length ? body : `<!-- ${find} -->\n${replace}\n<!-- ${find} -->`
+    const nextPullRequestBody = body.length ? body : pullRequestBody.replace(findRegexp, replacement)
 
     await octokit.rest.pulls.update({
       ...context.repo,
