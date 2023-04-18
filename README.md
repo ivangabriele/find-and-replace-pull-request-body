@@ -5,19 +5,19 @@
 ---
 
 - [Usage](#usage)
-  - [Replacing the entire PR body](#replacing-the-entire-pr-body)
-  - [Replacing a specific part of the PR body using a string](#replacing-a-specific-part-of-the-pr-body-using-a-string)
-  - [Replacing a specific part of the PR body using an HTML Comment Tag](#replacing-a-specific-part-of-the-pr-body-using-an-html-comment-tag)
+  - [Replacing the entire PR body (continuous)](#replacing-the-entire-pr-body-continuous)
+  - [Replacing a specific part of the PR body using a string (one time)](#replacing-a-specific-part-of-the-pr-body-using-a-string-one-time)
+  - [Replacing a specific part of the PR body using an HTML Comment Tag (continuous)](#replacing-a-specific-part-of-the-pr-body-using-an-html-comment-tag-continuous)
 
 ---
 
 ## Usage
 
-### Replacing the entire PR body
+### Replacing the entire PR body (continuous)
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.2
+        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.3
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           body: |
@@ -26,7 +26,7 @@
             With a new body description.
 ```
 
-### Replacing a specific part of the PR body using a string
+### Replacing a specific part of the PR body using a string (one time)
 
 Let's say you have a PR body like this:
 
@@ -38,7 +38,7 @@ _Waiting for deployment..._
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.2
+        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.3
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           find: '_Waiting for deployment..._'
@@ -53,7 +53,7 @@ will replace the `find` string with the `replace` string and update the PR body 
 https://example.com/my-preview
 ```
 
-### Replacing a specific part of the PR body using an HTML Comment Tag
+### Replacing a specific part of the PR body using an HTML Comment Tag (continuous)
 
 Let's say you have a PR body like this:
 
@@ -67,7 +67,7 @@ _Waiting for deployment..._
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.2
+        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.3
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           find: 'AUTOFILLED_PREVIEW_URL'

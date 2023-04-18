@@ -7,14 +7,16 @@ branding:
 
 inputs:
   githubToken:
-    description: "Github Personal Access Token"
+    description: 'Github Personal Access Token'
     required: true
   body:
-    description: "New Pull Request body"
+    description: 'New Pull Request body'
   find:
-    description: "String to find in Pull Request body"
+    description: 'String to find in Pull Request body'
+  isHtmlCommentTag:
+    description: 'Treat `find` input as an HTML Comment Tag'
   replace:
-    description: "Replacement string in Pull Request body"
+    description: 'Replacement string in Pull Request body'
 runs:
   using: node16
   main: ./index.dist.js
