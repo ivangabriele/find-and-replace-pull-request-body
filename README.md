@@ -17,7 +17,7 @@
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/find-and-replace-pull-request-body@v1.0.3
+        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.1
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           body: |
@@ -38,7 +38,7 @@ _Waiting for deployment..._
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/find-and-replace-pull-request-body@v1.0.3
+        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.1
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           find: '_Waiting for deployment..._'
@@ -67,7 +67,7 @@ _Waiting for deployment..._
 
 ```yml
       - name: Replace Pull Request Body
-        uses: ivangabriele/find-and-replace-pull-request-body@v1.0.3
+        uses: ivangabriele/find-and-replace-pull-request-body@v1.1.1
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           find: 'AUTOFILLED_PREVIEW_URL'
