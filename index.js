@@ -49,10 +49,16 @@ try {
     )
   }
 
-  if (isHtmlCommentTag === 'true') {
+  if (body.length) {
+    await octokit.rest.pulls.update({
+      ...context.repo,
+      pull_number: pullRequestNumber,
+      body,
+    })
+  } else if (isHtmlCommentTag === 'true') {
     const findRegexp = new RegExp(`\<\!\-\- ${find} \-\-\>.*\<\!\-\- ${find} \-\-\>`, 's')
     const replacement = body.length ? body : `<!-- ${find} -->\n${replace}\n<!-- ${find} -->`
-    const nextPullRequestBody = body.length ? body : pullRequestBody.replace(findRegexp, replacement)
+    const nextPullRequestBody = pullRequestBody.replace(findRegexp, replacement)
 
     await octokit.rest.pulls.update({
       ...context.repo,
@@ -60,7 +66,7 @@ try {
       body: nextPullRequestBody,
     })
   } else {
-    const nextPullRequestBody = body.length ? body : pullRequestBody.replace(find, replace)
+    const nextPullRequestBody = pullRequestBody.replace(find, replace)
 
     await octokit.rest.pulls.update({
       ...context.repo,
