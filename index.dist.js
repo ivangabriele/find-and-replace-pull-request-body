@@ -15,10 +15,21 @@ import zlib from 'zlib';
 
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
+function getDefaultExportFromCjs (x) {
+	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
+}
+
 function getAugmentedNamespace(n) {
+  if (n.__esModule) return n;
   var f = n.default;
 	if (typeof f == "function") {
-		var a = function () {
+		var a = function a () {
+			if (this instanceof a) {
+				var args = [null];
+				args.push.apply(args, arguments);
+				var Ctor = Function.bind.apply(f, args);
+				return new Ctor();
+			}
 			return f.apply(this, arguments);
 		};
 		a.prototype = f.prototype;
@@ -36,7 +47,7 @@ function getAugmentedNamespace(n) {
 	return a;
 }
 
-var core = {};
+var core$1 = {};
 
 var command = {};
 
@@ -761,15 +772,15 @@ function version(uuid) {
 
 var esmBrowser = /*#__PURE__*/Object.freeze({
 	__proto__: null,
+	NIL: nil,
+	parse: parse$1,
+	stringify: stringify,
 	v1: v1,
 	v3: v3$1,
 	v4: v4,
 	v5: v5$1,
-	NIL: nil,
-	version: version,
 	validate: validate,
-	stringify: stringify,
-	parse: parse$1
+	version: version
 });
 
 var require$$2$1 = /*@__PURE__*/getAugmentedNamespace(esmBrowser);
@@ -897,9 +908,7 @@ function checkBypass(reqUrl) {
 }
 proxy.checkBypass = checkBypass;
 
-var tunnel$1 = {exports: {}};
-
-var tunnel = {};
+var tunnel$1 = {};
 
 var tls = require$$1$1;
 var http = http$1;
@@ -908,10 +917,10 @@ var events = require$$4$1;
 var util = require$$6;
 
 
-tunnel.httpOverHttp = httpOverHttp;
-tunnel.httpsOverHttp = httpsOverHttp;
-tunnel.httpOverHttps = httpOverHttps;
-tunnel.httpsOverHttps = httpsOverHttps;
+tunnel$1.httpOverHttp = httpOverHttp;
+tunnel$1.httpsOverHttp = httpsOverHttp;
+tunnel$1.httpOverHttps = httpOverHttps;
+tunnel$1.httpsOverHttps = httpsOverHttps;
 
 
 function httpOverHttp(options) {
@@ -1160,11 +1169,9 @@ if (process.env.NODE_DEBUG && /\btunnel\b/.test(process.env.NODE_DEBUG)) {
 } else {
   debug = function() {};
 }
-tunnel.debug = debug; // for test
+tunnel$1.debug = debug; // for test
 
-(function (module) {
-	module.exports = tunnel;
-} (tunnel$1));
+var tunnel = tunnel$1;
 
 (function (exports) {
 	/* eslint-disable @typescript-eslint/no-explicit-any */
@@ -1201,7 +1208,7 @@ tunnel.debug = debug; // for test
 	const http = __importStar(http$1);
 	const https = __importStar(require$$3$1);
 	const pm = __importStar(proxy);
-	const tunnel = __importStar(tunnel$1.exports);
+	const tunnel$1 = __importStar(tunnel);
 	var HttpCodes;
 	(function (HttpCodes) {
 	    HttpCodes[HttpCodes["OK"] = 200] = "OK";
@@ -1667,10 +1674,10 @@ tunnel.debug = debug; // for test
 	            let tunnelAgent;
 	            const overHttps = proxyUrl.protocol === 'https:';
 	            if (usingSsl) {
-	                tunnelAgent = overHttps ? tunnel.httpsOverHttps : tunnel.httpsOverHttp;
+	                tunnelAgent = overHttps ? tunnel$1.httpsOverHttps : tunnel$1.httpsOverHttp;
 	            }
 	            else {
-	                tunnelAgent = overHttps ? tunnel.httpOverHttps : tunnel.httpOverHttp;
+	                tunnelAgent = overHttps ? tunnel$1.httpOverHttps : tunnel$1.httpOverHttp;
 	            }
 	            agent = tunnelAgent(agentOptions);
 	            this._proxyAgent = agent;
@@ -2229,7 +2236,7 @@ function requireSummary () {
 		exports.markdownSummary = _summary;
 		exports.summary = _summary;
 		
-} (summary));
+	} (summary));
 	return summary;
 }
 
@@ -2303,7 +2310,7 @@ function requirePathUtils () {
 var hasRequiredCore;
 
 function requireCore () {
-	if (hasRequiredCore) return core;
+	if (hasRequiredCore) return core$1;
 	hasRequiredCore = 1;
 	(function (exports) {
 		var __createBinding = (commonjsGlobal && commonjsGlobal.__createBinding) || (Object.create ? (function(o, m, k, k2) {
@@ -2641,11 +2648,12 @@ function requireCore () {
 		Object.defineProperty(exports, "toWin32Path", { enumerable: true, get: function () { return path_utils_1.toWin32Path; } });
 		Object.defineProperty(exports, "toPlatformPath", { enumerable: true, get: function () { return path_utils_1.toPlatformPath; } });
 		
-} (core));
-	return core;
+	} (core$1));
+	return core$1;
 }
 
 var coreExports = requireCore();
+var core = /*@__PURE__*/getDefaultExportFromCjs(coreExports);
 
 var github = {};
 
@@ -3536,8 +3544,10 @@ var utils = {exports: {}};
 
 	module.exports.implForWrapper = function (wrapper) {
 	  return wrapper[module.exports.implSymbol];
-	};
+	}; 
 } (utils));
+
+var utilsExports = utils.exports;
 
 var URLImpl = {};
 
@@ -82683,10 +82693,12 @@ tr46.PROCESSING_OPTIONS = PROCESSING_OPTIONS;
 
 	  // We don't handle blobs, so this just delegates:
 	  return module.exports.basicURLParse(input, { baseURL: options.baseURL, encodingOverride: options.encodingOverride });
-	};
+	}; 
 } (urlStateMachine));
 
-const usm = urlStateMachine.exports;
+var urlStateMachineExports = urlStateMachine.exports;
+
+const usm = urlStateMachineExports;
 
 URLImpl.implementation = class URLImpl {
   constructor(constructorArgs) {
@@ -82889,10 +82901,10 @@ URLImpl.implementation = class URLImpl {
 (function (module) {
 
 	const conversions = lib;
-	const utils$1 = utils.exports;
+	const utils = utilsExports;
 	const Impl = URLImpl;
 
-	const impl = utils$1.implSymbol;
+	const impl = utils.implSymbol;
 
 	function URL(url) {
 	  if (!this || this[impl] || !(this instanceof URL)) {
@@ -83073,25 +83085,27 @@ URLImpl.implementation = class URLImpl {
 	    privateData.wrapper = obj;
 
 	    obj[impl] = new Impl.implementation(constructorArgs, privateData);
-	    obj[impl][utils$1.wrapperSymbol] = obj;
+	    obj[impl][utils.wrapperSymbol] = obj;
 	  },
 	  interface: URL,
 	  expose: {
 	    Window: { URL: URL },
 	    Worker: { URL: URL }
 	  }
-	};
+	}; 
 } (URL$2));
 
-publicApi.URL = URL$2.exports.interface;
-publicApi.serializeURL = urlStateMachine.exports.serializeURL;
-publicApi.serializeURLOrigin = urlStateMachine.exports.serializeURLOrigin;
-publicApi.basicURLParse = urlStateMachine.exports.basicURLParse;
-publicApi.setTheUsername = urlStateMachine.exports.setTheUsername;
-publicApi.setThePassword = urlStateMachine.exports.setThePassword;
-publicApi.serializeHost = urlStateMachine.exports.serializeHost;
-publicApi.serializeInteger = urlStateMachine.exports.serializeInteger;
-publicApi.parseURL = urlStateMachine.exports.parseURL;
+var URLExports = URL$2.exports;
+
+publicApi.URL = URLExports.interface;
+publicApi.serializeURL = urlStateMachineExports.serializeURL;
+publicApi.serializeURLOrigin = urlStateMachineExports.serializeURLOrigin;
+publicApi.basicURLParse = urlStateMachineExports.basicURLParse;
+publicApi.setTheUsername = urlStateMachineExports.setTheUsername;
+publicApi.setThePassword = urlStateMachineExports.setThePassword;
+publicApi.serializeHost = urlStateMachineExports.serializeHost;
+publicApi.serializeInteger = urlStateMachineExports.serializeInteger;
+publicApi.parseURL = urlStateMachineExports.parseURL;
 
 // Based on https://github.com/tmpvar/jsdom/blob/aa85b2abf07766ff7bf5c1f6daafb3726f2f2db5/lib/jsdom/living/blob.js
 
@@ -84785,7 +84799,7 @@ class Deprecation extends Error {
 
 }
 
-var once$1 = {exports: {}};
+var once$2 = {exports: {}};
 
 // Returns a wrapper function that returns a wrapped callback
 // The wrapper function should do some stuff, and return a
@@ -84822,8 +84836,8 @@ function wrappy$1 (fn, cb) {
 }
 
 var wrappy = wrappy_1;
-once$1.exports = wrappy(once);
-once$1.exports.strict = wrappy(onceStrict);
+once$2.exports = wrappy(once);
+once$2.exports.strict = wrappy(onceStrict);
 
 once.proto = once(function () {
   Object.defineProperty(Function.prototype, 'once', {
@@ -84864,8 +84878,11 @@ function onceStrict (fn) {
   return f
 }
 
-const logOnceCode = once$1.exports((deprecation) => console.warn(deprecation));
-const logOnceHeaders = once$1.exports((deprecation) => console.warn(deprecation));
+var onceExports = once$2.exports;
+var once$1 = /*@__PURE__*/getDefaultExportFromCjs(onceExports);
+
+const logOnceCode = once$1((deprecation) => console.warn(deprecation));
+const logOnceHeaders = once$1((deprecation) => console.warn(deprecation));
 /**
  * Error with extra properties to help with debugging
  */
@@ -87315,28 +87332,36 @@ function getOctokit(token, options, ...additionalPlugins) {
 github.getOctokit = getOctokit;
 
 try {
-  const githubToken = coreExports.getInput('githubToken', { required: true });
-  const body = coreExports.getInput('body');
-  const find = coreExports.getInput('find');
-  const replace = coreExports.getInput('replace');
+  const githubToken = core.getInput('githubToken', { required: true });
+  const body = core.getInput('body');
+  const find = core.getInput('find');
+  const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true';
+  const replace = core.getInput('replace');
 
   if (!githubToken.length) {
     throw new Error(
-      'You forgot to set `githubToken` imput.\n' +
+      'You forgot to set `githubToken` input.\n' +
         'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
   if (!body.length && (!find.length || !replace.length)) {
     throw new Error(
-      'You must either set `body` imput or both `find` and `replace` imputs.\n' +
+      'You must either set `body` input or both `find` and `replace` inputs.\n' +
         'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
   if (body.length && (find.length || replace.length)) {
     throw new Error(
-      "You can't use `body` imput while setting `find` and `replace` ones.\n" +
+      "You can't use `body` input while setting `find` and `replace` ones.\n" +
+        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+    )
+  }
+
+  if (isHtmlCommentTag && !find.length) {
+    throw new Error(
+      "You can't set set `isHtmlCommentTag` input to `true` without also setting `find` input.\n" +
         'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
@@ -87354,13 +87379,27 @@ try {
     )
   }
 
-  const nextPullRequestBody = body.length ? body : pullRequestBody.replace(find, replace);
+  if (isHtmlCommentTag === 'true') {
+    const findRegexp = new RegExp(`\<\!\-\- ${find} \-\-\>.*\<\!\-\- ${find} \-\-\>`, 's');
 
-  await octokit.rest.pulls.update({
-    ...context.repo,
-    pull_number: pullRequestNumber,
-    body: nextPullRequestBody,
-  });
+    const nextPullRequestBody = body.length
+      ? body
+      : `<!-- ${find} -->\n${pullRequestBody.replace(findRegexp, replace)}\n<!-- ${find} -->`;
+
+    await octokit.rest.pulls.update({
+      ...context.repo,
+      pull_number: pullRequestNumber,
+      body: nextPullRequestBody,
+    });
+  } else {
+    const nextPullRequestBody = body.length ? body : pullRequestBody.replace(find, replace);
+
+    await octokit.rest.pulls.update({
+      ...context.repo,
+      pull_number: pullRequestNumber,
+      body: nextPullRequestBody,
+    });
+  }
 } catch (e) {
-  coreExports.setFailed(e.message);
+  core.setFailed(e.message);
 }

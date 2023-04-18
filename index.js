@@ -5,25 +5,33 @@ try {
   const githubToken = core.getInput('githubToken', { required: true })
   const body = core.getInput('body')
   const find = core.getInput('find')
+  const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true'
   const replace = core.getInput('replace')
 
   if (!githubToken.length) {
     throw new Error(
-      'You forgot to set `githubToken` imput.\n' +
+      'You forgot to set `githubToken` input.\n' +
         'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
   if (!body.length && (!find.length || !replace.length)) {
     throw new Error(
-      'You must either set `body` imput or both `find` and `replace` imputs.\n' +
+      'You must either set `body` input or both `find` and `replace` inputs.\n' +
         'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
 
   if (body.length && (find.length || replace.length)) {
     throw new Error(
-      "You can't use `body` imput while setting `find` and `replace` ones.\n" +
+      "You can't use `body` input while setting `find` and `replace` ones.\n" +
+        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+    )
+  }
+
+  if (isHtmlCommentTag && !find.length) {
+    throw new Error(
+      "You can't set set `isHtmlCommentTag` input to `true` without also setting `find` input.\n" +
         'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
     )
   }
@@ -41,13 +49,27 @@ try {
     )
   }
 
-  const nextPullRequestBody = body.length ? body : pullRequestBody.replace(find, replace)
+  if (isHtmlCommentTag === 'true') {
+    const findRegexp = new RegExp(`\<\!\-\- ${find} \-\-\>.*\<\!\-\- ${find} \-\-\>`, 's')
 
-  await octokit.rest.pulls.update({
-    ...context.repo,
-    pull_number: pullRequestNumber,
-    body: nextPullRequestBody,
-  })
+    const nextPullRequestBody = body.length
+      ? body
+      : `<!-- ${find} -->\n${pullRequestBody.replace(findRegexp, replace)}\n<!-- ${find} -->`
+
+    await octokit.rest.pulls.update({
+      ...context.repo,
+      pull_number: pullRequestNumber,
+      body: nextPullRequestBody,
+    })
+  } else {
+    const nextPullRequestBody = body.length ? body : pullRequestBody.replace(find, replace)
+
+    await octokit.rest.pulls.update({
+      ...context.repo,
+      pull_number: pullRequestNumber,
+      body: nextPullRequestBody,
+    })
+  }
 } catch (e) {
   core.setFailed(e.message)
 }
