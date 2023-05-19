@@ -875,6 +875,10 @@ function checkBypass(reqUrl) {
     if (!reqUrl.hostname) {
         return false;
     }
+    const reqHost = reqUrl.hostname;
+    if (isLoopbackAddress(reqHost)) {
+        return true;
+    }
     const noProxy = process.env['no_proxy'] || process.env['NO_PROXY'] || '';
     if (!noProxy) {
         return false;
@@ -900,13 +904,24 @@ function checkBypass(reqUrl) {
         .split(',')
         .map(x => x.trim().toUpperCase())
         .filter(x => x)) {
-        if (upperReqHosts.some(x => x === upperNoProxyItem)) {
+        if (upperNoProxyItem === '*' ||
+            upperReqHosts.some(x => x === upperNoProxyItem ||
+                x.endsWith(`.${upperNoProxyItem}`) ||
+                (upperNoProxyItem.startsWith('.') &&
+                    x.endsWith(`${upperNoProxyItem}`)))) {
             return true;
         }
     }
     return false;
 }
 proxy.checkBypass = checkBypass;
+function isLoopbackAddress(host) {
+    const hostLower = host.toLowerCase();
+    return (hostLower === 'localhost' ||
+        hostLower.startsWith('127.') ||
+        hostLower.startsWith('[::1]') ||
+        hostLower.startsWith('[0:0:0:0:0:0:0:1]'));
+}
 
 var tunnel$1 = {};
 
@@ -2873,45 +2888,49 @@ var removeHook = remove;
 var bind = Function.bind;
 var bindable = bind.bind(bind);
 
-function bindApi (hook, state, name) {
-  var removeHookRef = bindable(removeHook, null).apply(null, name ? [state, name] : [state]);
+function bindApi(hook, state, name) {
+  var removeHookRef = bindable(removeHook, null).apply(
+    null,
+    name ? [state, name] : [state]
+  );
   hook.api = { remove: removeHookRef };
-  hook.remove = removeHookRef
-
-  ;['before', 'error', 'after', 'wrap'].forEach(function (kind) {
+  hook.remove = removeHookRef;
+  ["before", "error", "after", "wrap"].forEach(function (kind) {
     var args = name ? [state, kind, name] : [state, kind];
     hook[kind] = hook.api[kind] = bindable(addHook, null).apply(null, args);
   });
 }
 
-function HookSingular () {
-  var singularHookName = 'h';
+function HookSingular() {
+  var singularHookName = "h";
   var singularHookState = {
-    registry: {}
+    registry: {},
   };
   var singularHook = register.bind(null, singularHookState, singularHookName);
   bindApi(singularHook, singularHookState, singularHookName);
-  return singularHook
+  return singularHook;
 }
 
-function HookCollection () {
+function HookCollection() {
   var state = {
-    registry: {}
+    registry: {},
   };
 
   var hook = register.bind(null, state);
   bindApi(hook, state);
 
-  return hook
+  return hook;
 }
 
 var collectionHookDeprecationMessageDisplayed = false;
-function Hook () {
+function Hook() {
   if (!collectionHookDeprecationMessageDisplayed) {
-    console.warn('[before-after-hook]: "Hook()" repurposing warning, use "Hook.Collection()". Read more: https://git.io/upgrade-before-after-hook-to-1.4');
+    console.warn(
+      '[before-after-hook]: "Hook()" repurposing warning, use "Hook.Collection()". Read more: https://git.io/upgrade-before-after-hook-to-1.4'
+    );
     collectionHookDeprecationMessageDisplayed = true;
   }
-  return HookCollection()
+  return HookCollection();
 }
 
 Hook.Singular = HookSingular.bind();
@@ -84514,6 +84533,20 @@ const isDomainOrSubdomain = function isDomainOrSubdomain(destination, original) 
 };
 
 /**
+ * isSameProtocol reports whether the two provided URLs use the same protocol.
+ *
+ * Both domains must already be in canonical form.
+ * @param {string|URL} original
+ * @param {string|URL} destination
+ */
+const isSameProtocol = function isSameProtocol(destination, original) {
+	const orig = new URL$1$1(original).protocol;
+	const dest = new URL$1$1(destination).protocol;
+
+	return orig === dest;
+};
+
+/**
  * Fetch function
  *
  * @param   Mixed    url   Absolute url or Request instance
@@ -84544,7 +84577,7 @@ function fetch(url, opts) {
 			let error = new AbortError('The user aborted a request.');
 			reject(error);
 			if (request.body && request.body instanceof Stream.Readable) {
-				request.body.destroy(error);
+				destroyStream(request.body, error);
 			}
 			if (!response || !response.body) return;
 			response.body.emit('error', error);
@@ -84585,8 +84618,42 @@ function fetch(url, opts) {
 
 		req.on('error', function (err) {
 			reject(new FetchError(`request to ${request.url} failed, reason: ${err.message}`, 'system', err));
+
+			if (response && response.body) {
+				destroyStream(response.body, err);
+			}
+
 			finalize();
 		});
+
+		fixResponseChunkedTransferBadEnding(req, function (err) {
+			if (signal && signal.aborted) {
+				return;
+			}
+
+			if (response && response.body) {
+				destroyStream(response.body, err);
+			}
+		});
+
+		/* c8 ignore next 18 */
+		if (parseInt(process.version.substring(1)) < 14) {
+			// Before Node.js 14, pipeline() does not fully support async iterators and does not always
+			// properly handle when the socket close/end events are out of order.
+			req.on('socket', function (s) {
+				s.addListener('close', function (hadError) {
+					// if a data listener is still present we didn't end cleanly
+					const hasDataListener = s.listenerCount('data') > 0;
+
+					// if end happened before close but the socket didn't emit an error, do it now
+					if (response && hasDataListener && !hadError && !(signal && signal.aborted)) {
+						const err = new Error('Premature close');
+						err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+						response.body.emit('error', err);
+					}
+				});
+			});
+		}
 
 		req.on('response', function (res) {
 			clearTimeout(reqTimeout);
@@ -84659,7 +84726,7 @@ function fetch(url, opts) {
 							size: request.size
 						};
 
-						if (!isDomainOrSubdomain(request.url, locationURL)) {
+						if (!isDomainOrSubdomain(request.url, locationURL) || !isSameProtocol(request.url, locationURL)) {
 							for (const name of ['authorization', 'www-authenticate', 'cookie', 'cookie2']) {
 								requestOpts.headers.delete(name);
 							}
@@ -84752,6 +84819,13 @@ function fetch(url, opts) {
 					response = new Response(body, response_options);
 					resolve(response);
 				});
+				raw.on('end', function () {
+					// some old IIS servers return zero-length OK deflate responses, so 'data' is never emitted.
+					if (!response) {
+						response = new Response(body, response_options);
+						resolve(response);
+					}
+				});
 				return;
 			}
 
@@ -84771,6 +84845,41 @@ function fetch(url, opts) {
 		writeToStream(req, request);
 	});
 }
+function fixResponseChunkedTransferBadEnding(request, errorCallback) {
+	let socket;
+
+	request.on('socket', function (s) {
+		socket = s;
+	});
+
+	request.on('response', function (response) {
+		const headers = response.headers;
+
+		if (headers['transfer-encoding'] === 'chunked' && !headers['content-length']) {
+			response.once('close', function (hadError) {
+				// if a data listener is still present we didn't end cleanly
+				const hasDataListener = socket.listenerCount('data') > 0;
+
+				if (hasDataListener && !hadError) {
+					const err = new Error('Premature close');
+					err.code = 'ERR_STREAM_PREMATURE_CLOSE';
+					errorCallback(err);
+				}
+			});
+		}
+	});
+}
+
+function destroyStream(stream, err) {
+	if (stream.destroy) {
+		stream.destroy(err);
+	} else {
+		// node < 8
+		stream.emit('error', err);
+		stream.end();
+	}
+}
+
 /**
  * Redirect code matching
  *
@@ -85370,6 +85479,12 @@ var require$$2 = /*@__PURE__*/getAugmentedNamespace(distWeb$2);
 
 const Endpoints = {
     actions: {
+        addCustomLabelsToSelfHostedRunnerForOrg: [
+            "POST /orgs/{org}/actions/runners/{runner_id}/labels",
+        ],
+        addCustomLabelsToSelfHostedRunnerForRepo: [
+            "POST /repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
+        ],
         addSelectedRepoToOrgSecret: [
             "PUT /orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
         ],
@@ -85398,6 +85513,12 @@ const Endpoints = {
         ],
         createWorkflowDispatch: [
             "POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
+        ],
+        deleteActionsCacheById: [
+            "DELETE /repos/{owner}/{repo}/actions/caches/{cache_id}",
+        ],
+        deleteActionsCacheByKey: [
+            "DELETE /repos/{owner}/{repo}/actions/caches{?key,ref}",
         ],
         deleteArtifact: [
             "DELETE /repos/{owner}/{repo}/actions/artifacts/{artifact_id}",
@@ -85443,6 +85564,15 @@ const Endpoints = {
         enableWorkflow: [
             "PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable",
         ],
+        getActionsCacheList: ["GET /repos/{owner}/{repo}/actions/caches"],
+        getActionsCacheUsage: ["GET /repos/{owner}/{repo}/actions/cache/usage"],
+        getActionsCacheUsageByRepoForOrg: [
+            "GET /orgs/{org}/actions/cache/usage-by-repository",
+        ],
+        getActionsCacheUsageForEnterprise: [
+            "GET /enterprises/{enterprise}/actions/cache/usage",
+        ],
+        getActionsCacheUsageForOrg: ["GET /orgs/{org}/actions/cache/usage"],
         getAllowedActionsOrganization: [
             "GET /orgs/{org}/actions/permissions/selected-actions",
         ],
@@ -85455,6 +85585,15 @@ const Endpoints = {
         ],
         getEnvironmentSecret: [
             "GET /repositories/{repository_id}/environments/{environment_name}/secrets/{secret_name}",
+        ],
+        getGithubActionsDefaultWorkflowPermissionsEnterprise: [
+            "GET /enterprises/{enterprise}/actions/permissions/workflow",
+        ],
+        getGithubActionsDefaultWorkflowPermissionsOrganization: [
+            "GET /orgs/{org}/actions/permissions/workflow",
+        ],
+        getGithubActionsDefaultWorkflowPermissionsRepository: [
+            "GET /repos/{owner}/{repo}/actions/permissions/workflow",
         ],
         getGithubActionsPermissionsOrganization: [
             "GET /orgs/{org}/actions/permissions",
@@ -85483,6 +85622,9 @@ const Endpoints = {
             "GET /repos/{owner}/{repo}/actions/runners/{runner_id}",
         ],
         getWorkflow: ["GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}"],
+        getWorkflowAccessToRepository: [
+            "GET /repos/{owner}/{repo}/actions/permissions/access",
+        ],
         getWorkflowRun: ["GET /repos/{owner}/{repo}/actions/runs/{run_id}"],
         getWorkflowRunAttempt: [
             "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}",
@@ -85502,6 +85644,12 @@ const Endpoints = {
         ],
         listJobsForWorkflowRunAttempt: [
             "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs",
+        ],
+        listLabelsForSelfHostedRunnerForOrg: [
+            "GET /orgs/{org}/actions/runners/{runner_id}/labels",
+        ],
+        listLabelsForSelfHostedRunnerForRepo: [
+            "GET /repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
         ],
         listOrgSecrets: ["GET /orgs/{org}/actions/secrets"],
         listRepoSecrets: ["GET /repos/{owner}/{repo}/actions/secrets"],
@@ -85525,6 +85673,25 @@ const Endpoints = {
             "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs",
         ],
         listWorkflowRunsForRepo: ["GET /repos/{owner}/{repo}/actions/runs"],
+        reRunJobForWorkflowRun: [
+            "POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun",
+        ],
+        reRunWorkflow: ["POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun"],
+        reRunWorkflowFailedJobs: [
+            "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
+        ],
+        removeAllCustomLabelsFromSelfHostedRunnerForOrg: [
+            "DELETE /orgs/{org}/actions/runners/{runner_id}/labels",
+        ],
+        removeAllCustomLabelsFromSelfHostedRunnerForRepo: [
+            "DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
+        ],
+        removeCustomLabelFromSelfHostedRunnerForOrg: [
+            "DELETE /orgs/{org}/actions/runners/{runner_id}/labels/{name}",
+        ],
+        removeCustomLabelFromSelfHostedRunnerForRepo: [
+            "DELETE /repos/{owner}/{repo}/actions/runners/{runner_id}/labels/{name}",
+        ],
         removeSelectedRepoFromOrgSecret: [
             "DELETE /orgs/{org}/actions/secrets/{secret_name}/repositories/{repository_id}",
         ],
@@ -85537,6 +85704,21 @@ const Endpoints = {
         setAllowedActionsRepository: [
             "PUT /repos/{owner}/{repo}/actions/permissions/selected-actions",
         ],
+        setCustomLabelsForSelfHostedRunnerForOrg: [
+            "PUT /orgs/{org}/actions/runners/{runner_id}/labels",
+        ],
+        setCustomLabelsForSelfHostedRunnerForRepo: [
+            "PUT /repos/{owner}/{repo}/actions/runners/{runner_id}/labels",
+        ],
+        setGithubActionsDefaultWorkflowPermissionsEnterprise: [
+            "PUT /enterprises/{enterprise}/actions/permissions/workflow",
+        ],
+        setGithubActionsDefaultWorkflowPermissionsOrganization: [
+            "PUT /orgs/{org}/actions/permissions/workflow",
+        ],
+        setGithubActionsDefaultWorkflowPermissionsRepository: [
+            "PUT /repos/{owner}/{repo}/actions/permissions/workflow",
+        ],
         setGithubActionsPermissionsOrganization: [
             "PUT /orgs/{org}/actions/permissions",
         ],
@@ -85548,6 +85730,9 @@ const Endpoints = {
         ],
         setSelectedRepositoriesEnabledGithubActionsOrganization: [
             "PUT /orgs/{org}/actions/permissions/repositories",
+        ],
+        setWorkflowAccessToRepository: [
+            "PUT /repos/{owner}/{repo}/actions/permissions/access",
         ],
     },
     activity: {
@@ -85605,14 +85790,6 @@ const Endpoints = {
             "PUT /user/installations/{installation_id}/repositories/{repository_id}",
         ],
         checkToken: ["POST /applications/{client_id}/token"],
-        createContentAttachment: [
-            "POST /content_references/{content_reference_id}/attachments",
-            { mediaType: { previews: ["corsair"] } },
-        ],
-        createContentAttachmentForRepo: [
-            "POST /repos/{owner}/{repo}/content_references/{content_reference_id}/attachments",
-            { mediaType: { previews: ["corsair"] } },
-        ],
         createFromManifest: ["POST /app-manifests/{code}/conversions"],
         createInstallationAccessToken: [
             "POST /app/installations/{installation_id}/access_tokens",
@@ -85676,6 +85853,12 @@ const Endpoints = {
         getGithubActionsBillingUser: [
             "GET /users/{username}/settings/billing/actions",
         ],
+        getGithubAdvancedSecurityBillingGhe: [
+            "GET /enterprises/{enterprise}/settings/billing/advanced-security",
+        ],
+        getGithubAdvancedSecurityBillingOrg: [
+            "GET /orgs/{org}/settings/billing/advanced-security",
+        ],
         getGithubPackagesBillingOrg: ["GET /orgs/{org}/settings/billing/packages"],
         getGithubPackagesBillingUser: [
             "GET /users/{username}/settings/billing/packages",
@@ -85727,6 +85910,7 @@ const Endpoints = {
         listAlertInstances: [
             "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances",
         ],
+        listAlertsForOrg: ["GET /orgs/{org}/code-scanning/alerts"],
         listAlertsForRepo: ["GET /repos/{owner}/{repo}/code-scanning/alerts"],
         listAlertsInstances: [
             "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances",
@@ -85743,8 +85927,135 @@ const Endpoints = {
         getAllCodesOfConduct: ["GET /codes_of_conduct"],
         getConductCode: ["GET /codes_of_conduct/{key}"],
     },
+    codespaces: {
+        addRepositoryForSecretForAuthenticatedUser: [
+            "PUT /user/codespaces/secrets/{secret_name}/repositories/{repository_id}",
+        ],
+        codespaceMachinesForAuthenticatedUser: [
+            "GET /user/codespaces/{codespace_name}/machines",
+        ],
+        createForAuthenticatedUser: ["POST /user/codespaces"],
+        createOrUpdateRepoSecret: [
+            "PUT /repos/{owner}/{repo}/codespaces/secrets/{secret_name}",
+        ],
+        createOrUpdateSecretForAuthenticatedUser: [
+            "PUT /user/codespaces/secrets/{secret_name}",
+        ],
+        createWithPrForAuthenticatedUser: [
+            "POST /repos/{owner}/{repo}/pulls/{pull_number}/codespaces",
+        ],
+        createWithRepoForAuthenticatedUser: [
+            "POST /repos/{owner}/{repo}/codespaces",
+        ],
+        deleteForAuthenticatedUser: ["DELETE /user/codespaces/{codespace_name}"],
+        deleteFromOrganization: [
+            "DELETE /orgs/{org}/members/{username}/codespaces/{codespace_name}",
+        ],
+        deleteRepoSecret: [
+            "DELETE /repos/{owner}/{repo}/codespaces/secrets/{secret_name}",
+        ],
+        deleteSecretForAuthenticatedUser: [
+            "DELETE /user/codespaces/secrets/{secret_name}",
+        ],
+        exportForAuthenticatedUser: [
+            "POST /user/codespaces/{codespace_name}/exports",
+        ],
+        getExportDetailsForAuthenticatedUser: [
+            "GET /user/codespaces/{codespace_name}/exports/{export_id}",
+        ],
+        getForAuthenticatedUser: ["GET /user/codespaces/{codespace_name}"],
+        getPublicKeyForAuthenticatedUser: [
+            "GET /user/codespaces/secrets/public-key",
+        ],
+        getRepoPublicKey: [
+            "GET /repos/{owner}/{repo}/codespaces/secrets/public-key",
+        ],
+        getRepoSecret: [
+            "GET /repos/{owner}/{repo}/codespaces/secrets/{secret_name}",
+        ],
+        getSecretForAuthenticatedUser: [
+            "GET /user/codespaces/secrets/{secret_name}",
+        ],
+        listDevcontainersInRepositoryForAuthenticatedUser: [
+            "GET /repos/{owner}/{repo}/codespaces/devcontainers",
+        ],
+        listForAuthenticatedUser: ["GET /user/codespaces"],
+        listInOrganization: [
+            "GET /orgs/{org}/codespaces",
+            {},
+            { renamedParameters: { org_id: "org" } },
+        ],
+        listInRepositoryForAuthenticatedUser: [
+            "GET /repos/{owner}/{repo}/codespaces",
+        ],
+        listRepoSecrets: ["GET /repos/{owner}/{repo}/codespaces/secrets"],
+        listRepositoriesForSecretForAuthenticatedUser: [
+            "GET /user/codespaces/secrets/{secret_name}/repositories",
+        ],
+        listSecretsForAuthenticatedUser: ["GET /user/codespaces/secrets"],
+        removeRepositoryForSecretForAuthenticatedUser: [
+            "DELETE /user/codespaces/secrets/{secret_name}/repositories/{repository_id}",
+        ],
+        repoMachinesForAuthenticatedUser: [
+            "GET /repos/{owner}/{repo}/codespaces/machines",
+        ],
+        setRepositoriesForSecretForAuthenticatedUser: [
+            "PUT /user/codespaces/secrets/{secret_name}/repositories",
+        ],
+        startForAuthenticatedUser: ["POST /user/codespaces/{codespace_name}/start"],
+        stopForAuthenticatedUser: ["POST /user/codespaces/{codespace_name}/stop"],
+        stopInOrganization: [
+            "POST /orgs/{org}/members/{username}/codespaces/{codespace_name}/stop",
+        ],
+        updateForAuthenticatedUser: ["PATCH /user/codespaces/{codespace_name}"],
+    },
+    dependabot: {
+        addSelectedRepoToOrgSecret: [
+            "PUT /orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}",
+        ],
+        createOrUpdateOrgSecret: [
+            "PUT /orgs/{org}/dependabot/secrets/{secret_name}",
+        ],
+        createOrUpdateRepoSecret: [
+            "PUT /repos/{owner}/{repo}/dependabot/secrets/{secret_name}",
+        ],
+        deleteOrgSecret: ["DELETE /orgs/{org}/dependabot/secrets/{secret_name}"],
+        deleteRepoSecret: [
+            "DELETE /repos/{owner}/{repo}/dependabot/secrets/{secret_name}",
+        ],
+        getOrgPublicKey: ["GET /orgs/{org}/dependabot/secrets/public-key"],
+        getOrgSecret: ["GET /orgs/{org}/dependabot/secrets/{secret_name}"],
+        getRepoPublicKey: [
+            "GET /repos/{owner}/{repo}/dependabot/secrets/public-key",
+        ],
+        getRepoSecret: [
+            "GET /repos/{owner}/{repo}/dependabot/secrets/{secret_name}",
+        ],
+        listOrgSecrets: ["GET /orgs/{org}/dependabot/secrets"],
+        listRepoSecrets: ["GET /repos/{owner}/{repo}/dependabot/secrets"],
+        listSelectedReposForOrgSecret: [
+            "GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories",
+        ],
+        removeSelectedRepoFromOrgSecret: [
+            "DELETE /orgs/{org}/dependabot/secrets/{secret_name}/repositories/{repository_id}",
+        ],
+        setSelectedReposForOrgSecret: [
+            "PUT /orgs/{org}/dependabot/secrets/{secret_name}/repositories",
+        ],
+    },
+    dependencyGraph: {
+        createRepositorySnapshot: [
+            "POST /repos/{owner}/{repo}/dependency-graph/snapshots",
+        ],
+        diffRange: [
+            "GET /repos/{owner}/{repo}/dependency-graph/compare/{basehead}",
+        ],
+    },
     emojis: { get: ["GET /emojis"] },
     enterpriseAdmin: {
+        addCustomLabelsToSelfHostedRunnerForEnterprise: [
+            "POST /enterprises/{enterprise}/actions/runners/{runner_id}/labels",
+        ],
         disableSelectedOrganizationGithubActionsEnterprise: [
             "DELETE /enterprises/{enterprise}/actions/permissions/organizations/{org_id}",
         ],
@@ -85757,11 +86068,26 @@ const Endpoints = {
         getGithubActionsPermissionsEnterprise: [
             "GET /enterprises/{enterprise}/actions/permissions",
         ],
+        getServerStatistics: [
+            "GET /enterprise-installation/{enterprise_or_org}/server-statistics",
+        ],
+        listLabelsForSelfHostedRunnerForEnterprise: [
+            "GET /enterprises/{enterprise}/actions/runners/{runner_id}/labels",
+        ],
         listSelectedOrganizationsEnabledGithubActionsEnterprise: [
             "GET /enterprises/{enterprise}/actions/permissions/organizations",
         ],
+        removeAllCustomLabelsFromSelfHostedRunnerForEnterprise: [
+            "DELETE /enterprises/{enterprise}/actions/runners/{runner_id}/labels",
+        ],
+        removeCustomLabelFromSelfHostedRunnerForEnterprise: [
+            "DELETE /enterprises/{enterprise}/actions/runners/{runner_id}/labels/{name}",
+        ],
         setAllowedActionsEnterprise: [
             "PUT /enterprises/{enterprise}/actions/permissions/selected-actions",
+        ],
+        setCustomLabelsForSelfHostedRunnerForEnterprise: [
+            "PUT /enterprises/{enterprise}/actions/runners/{runner_id}/labels",
         ],
         setGithubActionsPermissionsEnterprise: [
             "PUT /enterprises/{enterprise}/actions/permissions",
@@ -85986,6 +86312,7 @@ const Endpoints = {
         list: ["GET /organizations"],
         listAppInstallations: ["GET /orgs/{org}/installations"],
         listBlockedUsers: ["GET /orgs/{org}/blocks"],
+        listCustomRoles: ["GET /organizations/{organization_id}/custom_roles"],
         listFailedInvitations: ["GET /orgs/{org}/failed_invitations"],
         listForAuthenticatedUser: ["GET /user/orgs"],
         listForUser: ["GET /users/{username}/orgs"],
@@ -86229,6 +86556,9 @@ const Endpoints = {
         deleteForPullRequestComment: [
             "DELETE /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions/{reaction_id}",
         ],
+        deleteForRelease: [
+            "DELETE /repos/{owner}/{repo}/releases/{release_id}/reactions/{reaction_id}",
+        ],
         deleteForTeamDiscussion: [
             "DELETE /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/reactions/{reaction_id}",
         ],
@@ -86244,6 +86574,9 @@ const Endpoints = {
         ],
         listForPullRequestReviewComment: [
             "GET /repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions",
+        ],
+        listForRelease: [
+            "GET /repos/{owner}/{repo}/releases/{release_id}/reactions",
         ],
         listForTeamDiscussionCommentInOrg: [
             "GET /orgs/{org}/teams/{team_slug}/discussions/{discussion_number}/comments/{comment_number}/reactions",
@@ -86286,6 +86619,7 @@ const Endpoints = {
         checkVulnerabilityAlerts: [
             "GET /repos/{owner}/{repo}/vulnerability-alerts",
         ],
+        codeownersErrors: ["GET /repos/{owner}/{repo}/codeowners/errors"],
         compareCommits: ["GET /repos/{owner}/{repo}/compare/{base}...{head}"],
         compareCommitsWithBasehead: [
             "GET /repos/{owner}/{repo}/compare/{basehead}",
@@ -86313,6 +86647,7 @@ const Endpoints = {
         createOrUpdateFileContents: ["PUT /repos/{owner}/{repo}/contents/{path}"],
         createPagesSite: ["POST /repos/{owner}/{repo}/pages"],
         createRelease: ["POST /repos/{owner}/{repo}/releases"],
+        createTagProtection: ["POST /repos/{owner}/{repo}/tags/protection"],
         createUsingTemplate: [
             "POST /repos/{template_owner}/{template_repo}/generate",
         ],
@@ -86359,6 +86694,9 @@ const Endpoints = {
         deleteReleaseAsset: [
             "DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}",
         ],
+        deleteTagProtection: [
+            "DELETE /repos/{owner}/{repo}/tags/protection/{tag_protection_id}",
+        ],
         deleteWebhook: ["DELETE /repos/{owner}/{repo}/hooks/{hook_id}"],
         disableAutomatedSecurityFixes: [
             "DELETE /repos/{owner}/{repo}/automated-security-fixes",
@@ -86395,10 +86733,7 @@ const Endpoints = {
         getAllStatusCheckContexts: [
             "GET /repos/{owner}/{repo}/branches/{branch}/protection/required_status_checks/contexts",
         ],
-        getAllTopics: [
-            "GET /repos/{owner}/{repo}/topics",
-            { mediaType: { previews: ["mercy"] } },
-        ],
+        getAllTopics: ["GET /repos/{owner}/{repo}/topics"],
         getAppsWithAccessToProtectedBranch: [
             "GET /repos/{owner}/{repo}/branches/{branch}/protection/restrictions/apps",
         ],
@@ -86500,6 +86835,7 @@ const Endpoints = {
             "GET /repos/{owner}/{repo}/releases/{release_id}/assets",
         ],
         listReleases: ["GET /repos/{owner}/{repo}/releases"],
+        listTagProtection: ["GET /repos/{owner}/{repo}/tags/protection"],
         listTags: ["GET /repos/{owner}/{repo}/tags"],
         listTeams: ["GET /repos/{owner}/{repo}/teams"],
         listWebhookDeliveries: [
@@ -86539,10 +86875,7 @@ const Endpoints = {
             { mapToData: "users" },
         ],
         renameBranch: ["POST /repos/{owner}/{repo}/branches/{branch}/rename"],
-        replaceAllTopics: [
-            "PUT /repos/{owner}/{repo}/topics",
-            { mediaType: { previews: ["mercy"] } },
-        ],
+        replaceAllTopics: ["PUT /repos/{owner}/{repo}/topics"],
         requestPagesBuild: ["POST /repos/{owner}/{repo}/pages/builds"],
         setAdminBranchProtection: [
             "POST /repos/{owner}/{repo}/branches/{branch}/protection/enforce_admins",
@@ -86608,15 +86941,21 @@ const Endpoints = {
         issuesAndPullRequests: ["GET /search/issues"],
         labels: ["GET /search/labels"],
         repos: ["GET /search/repositories"],
-        topics: ["GET /search/topics", { mediaType: { previews: ["mercy"] } }],
+        topics: ["GET /search/topics"],
         users: ["GET /search/users"],
     },
     secretScanning: {
         getAlert: [
             "GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}",
         ],
+        listAlertsForEnterprise: [
+            "GET /enterprises/{enterprise}/secret-scanning/alerts",
+        ],
         listAlertsForOrg: ["GET /orgs/{org}/secret-scanning/alerts"],
         listAlertsForRepo: ["GET /repos/{owner}/{repo}/secret-scanning/alerts"],
+        listLocationsForAlert: [
+            "GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations",
+        ],
         updateAlert: [
             "PATCH /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}",
         ],
@@ -86802,7 +87141,7 @@ const Endpoints = {
     },
 };
 
-const VERSION$1 = "5.13.0";
+const VERSION$1 = "5.16.2";
 
 function endpointsToMethods(octokit, endpointsMap) {
     const newMethods = {};
@@ -86889,7 +87228,7 @@ var distWeb$1 = /*#__PURE__*/Object.freeze({
 
 var require$$3 = /*@__PURE__*/getAugmentedNamespace(distWeb$1);
 
-const VERSION = "2.17.0";
+const VERSION = "2.21.3";
 
 /**
  * Some “list” response that can be paginated have a different response structure
@@ -87016,7 +87355,9 @@ const paginatingEndpoints = [
     "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/organizations",
     "GET /enterprises/{enterprise}/actions/runner-groups/{runner_group_id}/runners",
     "GET /enterprises/{enterprise}/actions/runners",
-    "GET /enterprises/{enterprise}/actions/runners/downloads",
+    "GET /enterprises/{enterprise}/audit-log",
+    "GET /enterprises/{enterprise}/secret-scanning/alerts",
+    "GET /enterprises/{enterprise}/settings/billing/advanced-security",
     "GET /events",
     "GET /gists",
     "GET /gists/public",
@@ -87026,6 +87367,7 @@ const paginatingEndpoints = [
     "GET /gists/{gist_id}/forks",
     "GET /installation/repositories",
     "GET /issues",
+    "GET /licenses",
     "GET /marketplace_listing/plans",
     "GET /marketplace_listing/plans/{plan_id}/accounts",
     "GET /marketplace_listing/stubbed/plans",
@@ -87033,17 +87375,23 @@ const paginatingEndpoints = [
     "GET /networks/{owner}/{repo}/events",
     "GET /notifications",
     "GET /organizations",
+    "GET /orgs/{org}/actions/cache/usage-by-repository",
     "GET /orgs/{org}/actions/permissions/repositories",
     "GET /orgs/{org}/actions/runner-groups",
     "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/repositories",
     "GET /orgs/{org}/actions/runner-groups/{runner_group_id}/runners",
     "GET /orgs/{org}/actions/runners",
-    "GET /orgs/{org}/actions/runners/downloads",
     "GET /orgs/{org}/actions/secrets",
     "GET /orgs/{org}/actions/secrets/{secret_name}/repositories",
+    "GET /orgs/{org}/audit-log",
     "GET /orgs/{org}/blocks",
+    "GET /orgs/{org}/code-scanning/alerts",
+    "GET /orgs/{org}/codespaces",
     "GET /orgs/{org}/credential-authorizations",
+    "GET /orgs/{org}/dependabot/secrets",
+    "GET /orgs/{org}/dependabot/secrets/{secret_name}/repositories",
     "GET /orgs/{org}/events",
+    "GET /orgs/{org}/external-groups",
     "GET /orgs/{org}/failed_invitations",
     "GET /orgs/{org}/hooks",
     "GET /orgs/{org}/hooks/{hook_id}/deliveries",
@@ -87056,10 +87404,12 @@ const paginatingEndpoints = [
     "GET /orgs/{org}/migrations/{migration_id}/repositories",
     "GET /orgs/{org}/outside_collaborators",
     "GET /orgs/{org}/packages",
+    "GET /orgs/{org}/packages/{package_type}/{package_name}/versions",
     "GET /orgs/{org}/projects",
     "GET /orgs/{org}/public_members",
     "GET /orgs/{org}/repos",
     "GET /orgs/{org}/secret-scanning/alerts",
+    "GET /orgs/{org}/settings/billing/advanced-security",
     "GET /orgs/{org}/team-sync/groups",
     "GET /orgs/{org}/teams",
     "GET /orgs/{org}/teams/{team_slug}/discussions",
@@ -87070,14 +87420,13 @@ const paginatingEndpoints = [
     "GET /orgs/{org}/teams/{team_slug}/members",
     "GET /orgs/{org}/teams/{team_slug}/projects",
     "GET /orgs/{org}/teams/{team_slug}/repos",
-    "GET /orgs/{org}/teams/{team_slug}/team-sync/group-mappings",
     "GET /orgs/{org}/teams/{team_slug}/teams",
     "GET /projects/columns/{column_id}/cards",
     "GET /projects/{project_id}/collaborators",
     "GET /projects/{project_id}/columns",
     "GET /repos/{owner}/{repo}/actions/artifacts",
+    "GET /repos/{owner}/{repo}/actions/caches",
     "GET /repos/{owner}/{repo}/actions/runners",
-    "GET /repos/{owner}/{repo}/actions/runners/downloads",
     "GET /repos/{owner}/{repo}/actions/runs",
     "GET /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
     "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs",
@@ -87086,26 +87435,30 @@ const paginatingEndpoints = [
     "GET /repos/{owner}/{repo}/actions/workflows",
     "GET /repos/{owner}/{repo}/actions/workflows/{workflow_id}/runs",
     "GET /repos/{owner}/{repo}/assignees",
-    "GET /repos/{owner}/{repo}/autolinks",
     "GET /repos/{owner}/{repo}/branches",
     "GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations",
     "GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs",
     "GET /repos/{owner}/{repo}/code-scanning/alerts",
     "GET /repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/instances",
     "GET /repos/{owner}/{repo}/code-scanning/analyses",
+    "GET /repos/{owner}/{repo}/codespaces",
+    "GET /repos/{owner}/{repo}/codespaces/devcontainers",
+    "GET /repos/{owner}/{repo}/codespaces/secrets",
     "GET /repos/{owner}/{repo}/collaborators",
     "GET /repos/{owner}/{repo}/comments",
     "GET /repos/{owner}/{repo}/comments/{comment_id}/reactions",
     "GET /repos/{owner}/{repo}/commits",
-    "GET /repos/{owner}/{repo}/commits/{commit_sha}/branches-where-head",
     "GET /repos/{owner}/{repo}/commits/{commit_sha}/comments",
     "GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls",
     "GET /repos/{owner}/{repo}/commits/{ref}/check-runs",
     "GET /repos/{owner}/{repo}/commits/{ref}/check-suites",
+    "GET /repos/{owner}/{repo}/commits/{ref}/status",
     "GET /repos/{owner}/{repo}/commits/{ref}/statuses",
     "GET /repos/{owner}/{repo}/contributors",
+    "GET /repos/{owner}/{repo}/dependabot/secrets",
     "GET /repos/{owner}/{repo}/deployments",
     "GET /repos/{owner}/{repo}/deployments/{deployment_id}/statuses",
+    "GET /repos/{owner}/{repo}/environments",
     "GET /repos/{owner}/{repo}/events",
     "GET /repos/{owner}/{repo}/forks",
     "GET /repos/{owner}/{repo}/git/matching-refs/{ref}",
@@ -87139,16 +87492,16 @@ const paginatingEndpoints = [
     "GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/comments",
     "GET /repos/{owner}/{repo}/releases",
     "GET /repos/{owner}/{repo}/releases/{release_id}/assets",
+    "GET /repos/{owner}/{repo}/releases/{release_id}/reactions",
     "GET /repos/{owner}/{repo}/secret-scanning/alerts",
+    "GET /repos/{owner}/{repo}/secret-scanning/alerts/{alert_number}/locations",
     "GET /repos/{owner}/{repo}/stargazers",
     "GET /repos/{owner}/{repo}/subscribers",
     "GET /repos/{owner}/{repo}/tags",
     "GET /repos/{owner}/{repo}/teams",
+    "GET /repos/{owner}/{repo}/topics",
     "GET /repositories",
     "GET /repositories/{repository_id}/environments/{environment_name}/secrets",
-    "GET /scim/v2/enterprises/{enterprise}/Groups",
-    "GET /scim/v2/enterprises/{enterprise}/Users",
-    "GET /scim/v2/organizations/{org}/Users",
     "GET /search/code",
     "GET /search/commits",
     "GET /search/issues",
@@ -87164,9 +87517,10 @@ const paginatingEndpoints = [
     "GET /teams/{team_id}/members",
     "GET /teams/{team_id}/projects",
     "GET /teams/{team_id}/repos",
-    "GET /teams/{team_id}/team-sync/group-mappings",
     "GET /teams/{team_id}/teams",
     "GET /user/blocks",
+    "GET /user/codespaces",
+    "GET /user/codespaces/secrets",
     "GET /user/emails",
     "GET /user/followers",
     "GET /user/following",
@@ -87182,6 +87536,7 @@ const paginatingEndpoints = [
     "GET /user/migrations/{migration_id}/repositories",
     "GET /user/orgs",
     "GET /user/packages",
+    "GET /user/packages/{package_type}/{package_name}/versions",
     "GET /user/public_emails",
     "GET /user/repos",
     "GET /user/repository_invitations",
@@ -87331,79 +87686,87 @@ function getOctokit(token, options, ...additionalPlugins) {
 }
 github.getOctokit = getOctokit;
 
-try {
-  const githubToken = core.getInput('githubToken', { required: true });
-  const body = core.getInput('body');
-  const find = core.getInput('find');
-  const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true';
-  const replace = core.getInput('replace');
+async function run() {
+  try {
+    const githubToken = core.getInput('githubToken', { required: true });
+    const body = core.getInput('body');
+    const find = core.getInput('find');
+    const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true';
+    const replace = core.getInput('replace');
 
-  if (!githubToken.length) {
-    throw new Error(
-      'You forgot to set `githubToken` input.\n' +
-        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-    )
+    if (!githubToken.length) {
+      throw new Error(
+        'You forgot to set `githubToken` input.\n' +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    if (!body.length && (!find.length || !replace.length)) {
+      throw new Error(
+        'You must either set `body` input or both `find` and `replace` inputs.\n' +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    if (body.length && (find.length || replace.length)) {
+      throw new Error(
+        "You can't use `body` input while setting `find` and `replace` ones.\n" +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    if (isHtmlCommentTag && !find.length) {
+      throw new Error(
+        "You can't set set `isHtmlCommentTag` input to `true` without also setting `find` input.\n" +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    const { context } = github;
+    const octokit = github.getOctokit(githubToken);
+
+    const pullRequestNumber = context.payload.pull_request.number;
+    const pullRequestBody = context.payload.pull_request.body;
+
+    if (!body.length && !pullRequestBody) {
+      throw new Error(
+        'Pull request body is empty. There is nothing to `find` and `replace`.\n' +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    if (body.length) {
+      await octokit.rest.pulls.update({
+        ...context.repo,
+        pull_number: pullRequestNumber,
+        body,
+      });
+    } else if (isHtmlCommentTag) {
+      const findRegexp = new RegExp(`\<\!\-\- ${find} \-\-\>.*\<\!\-\- ${find} \-\-\>`, 's');
+      const replacement = body.length ? body : `<!-- ${find} -->\n${replace}\n<!-- ${find} -->`;
+      const nextPullRequestBody = pullRequestBody.replace(findRegexp, replacement);
+
+      console.log(nextPullRequestBody);
+
+      await octokit.rest.pulls.update({
+        ...context.repo,
+        pull_number: pullRequestNumber,
+        body: nextPullRequestBody,
+      });
+    } else {
+      const nextPullRequestBody = pullRequestBody.replace(find, replace);
+
+      await octokit.rest.pulls.update({
+        ...context.repo,
+        pull_number: pullRequestNumber,
+        body: nextPullRequestBody,
+      });
+    }
+  } catch (e) {
+    core.setFailed(e.message);
   }
-
-  if (!body.length && (!find.length || !replace.length)) {
-    throw new Error(
-      'You must either set `body` input or both `find` and `replace` inputs.\n' +
-        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-    )
-  }
-
-  if (body.length && (find.length || replace.length)) {
-    throw new Error(
-      "You can't use `body` input while setting `find` and `replace` ones.\n" +
-        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-    )
-  }
-
-  if (isHtmlCommentTag && !find.length) {
-    throw new Error(
-      "You can't set set `isHtmlCommentTag` input to `true` without also setting `find` input.\n" +
-        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-    )
-  }
-
-  const { context } = github;
-  const octokit = github.getOctokit(githubToken);
-
-  const pullRequestNumber = context.payload.pull_request.number;
-  const pullRequestBody = context.payload.pull_request.body;
-
-  if (!body.length && !pullRequestBody) {
-    throw new Error(
-      'Pull request body is empty. There is nothing to `find` and `replace`.\n' +
-        'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-    )
-  }
-
-  if (body.length) {
-    await octokit.rest.pulls.update({
-      ...context.repo,
-      pull_number: pullRequestNumber,
-      body,
-    });
-  } else if (isHtmlCommentTag === 'true') {
-    const findRegexp = new RegExp(`\<\!\-\- ${find} \-\-\>.*\<\!\-\- ${find} \-\-\>`, 's');
-    const replacement = body.length ? body : `<!-- ${find} -->\n${replace}\n<!-- ${find} -->`;
-    const nextPullRequestBody = pullRequestBody.replace(findRegexp, replacement);
-
-    await octokit.rest.pulls.update({
-      ...context.repo,
-      pull_number: pullRequestNumber,
-      body: nextPullRequestBody,
-    });
-  } else {
-    const nextPullRequestBody = pullRequestBody.replace(find, replace);
-
-    await octokit.rest.pulls.update({
-      ...context.repo,
-      pull_number: pullRequestNumber,
-      body: nextPullRequestBody,
-    });
-  }
-} catch (e) {
-  core.setFailed(e.message);
 }
+
+run();
+
+export { run };
