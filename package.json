@@ -2,7 +2,7 @@
   "name": "find-and-replace-pull-request-body",
   "description": "Github Action replacing workflow related Pull Request body.",
   "license": "MIT",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": true,
   "type": "module",
   "main": "./index.dist.js",
