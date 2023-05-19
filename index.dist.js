@@ -87746,8 +87746,6 @@ async function run() {
       const replacement = body.length ? body : `<!-- ${find} -->\n${replace}\n<!-- ${find} -->`;
       const nextPullRequestBody = pullRequestBody.replace(findRegexp, replacement);
 
-      console.log(nextPullRequestBody);
-
       await octokit.rest.pulls.update({
         ...context.repo,
         pull_number: pullRequestNumber,
