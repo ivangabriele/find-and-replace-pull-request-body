@@ -9,6 +9,8 @@ inputs:
   githubToken:
     description: 'Github Personal Access Token'
     required: true
+  prNumber:
+    description: 'Pull request number (if outside the pull_request context)'
   body:
     description: 'New Pull Request body'
   find:
