@@ -43,28 +43,26 @@ export async function run() {
 
     if (!context.payload.pull_request && !prNumber) {
       throw new Error(
-        // must provide one
-      //   "You can't use `body` input while setting `find` and `replace` ones.\n" +
-      //     'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+        'You must either trigger this action from a pull request, or manually set the `prNumber` input\n' +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
       )
     }
 
     if (context.payload.pull_request && prNumber) {
       throw new Error(
-        // only one
-      //   "You can't use `body` input while setting `find` and `replace` ones.\n" +
-      //     'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+        "You can't use `prNumber` while in the context of a pull request event.\n" +
+          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
       )
     }
 
-    let pullRequestNumber;
-    let pullRequestBody;
+    let pullRequestNumber
+    let pullRequestBody
 
     if (context.payload.pull_request) {
       pullRequestNumber = context.payload.pull_request.number
       pullRequestBody = context.payload.pull_request.body
     } else {
-      const {data: pullRequest} = await octokit.rest.pulls.get({
+      const { data: pullRequest } = await octokit.rest.pulls.get({
         ...context.repo,
         pull_number: parseInt(prNumber, 10),
       })
