@@ -4,6 +4,7 @@ import github from '@actions/github'
 export async function run() {
   try {
     const githubToken = core.getInput('githubToken', { required: true })
+    const prNumber = core.getInput('prNumber')
     const body = core.getInput('body')
     const find = core.getInput('find')
     const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true'
@@ -40,8 +41,37 @@ export async function run() {
     const { context } = github
     const octokit = github.getOctokit(githubToken)
 
-    const pullRequestNumber = context.payload.pull_request.number
-    const pullRequestBody = context.payload.pull_request.body
+    if (!context.payload.pull_request && !prNumber) {
+      throw new Error(
+        // must provide one
+      //   "You can't use `body` input while setting `find` and `replace` ones.\n" +
+      //     'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    if (context.payload.pull_request && prNumber) {
+      throw new Error(
+        // only one
+      //   "You can't use `body` input while setting `find` and `replace` ones.\n" +
+      //     'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
+      )
+    }
+
+    let pullRequestNumber;
+    let pullRequestBody;
+
+    if (context.payload.pull_request) {
+      pullRequestNumber = context.payload.pull_request.number
+      pullRequestBody = context.payload.pull_request.body
+    } else {
+      const {data: pullRequest} = await octokit.rest.pulls.get({
+        ...context.repo,
+        pull_number: parseInt(prNumber, 10),
+      })
+
+      pullRequestNumber = pullRequest.number
+      pullRequestBody = pullRequest.body
+    }
 
     if (!body.length && !pullRequestBody) {
       throw new Error(
