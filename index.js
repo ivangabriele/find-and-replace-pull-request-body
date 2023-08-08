@@ -3,8 +3,9 @@ import github from '@actions/github'
 
 export async function run() {
   try {
+    const { context } = github
     const githubToken = core.getInput('githubToken', { required: true })
-    const prNumber = core.getInput('prNumber')
+    const prNumber = parseInt((!!core.getInput('prNumber') ? core.getInput('prNumber') : context?.payload?.pull_request?.number) ?? 0, 10)
     const body = core.getInput('body')
     const find = core.getInput('find')
     const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true'
@@ -38,38 +39,20 @@ export async function run() {
       )
     }
 
-    const { context } = github
     const octokit = github.getOctokit(githubToken)
 
-    if (!context.payload.pull_request && !prNumber) {
+    if (!prNumber) {
       throw new Error(
         'You must either trigger this action from a pull request, or manually set the `prNumber` input\n' +
           'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
       )
     }
 
-    if (context.payload.pull_request && prNumber) {
-      throw new Error(
-        "You can't use `prNumber` while in the context of a pull request event.\n" +
-          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-      )
-    }
-
-    let pullRequestNumber
-    let pullRequestBody
-
-    if (context.payload.pull_request) {
-      pullRequestNumber = context.payload.pull_request.number
-      pullRequestBody = context.payload.pull_request.body
-    } else {
-      const { data: pullRequest } = await octokit.rest.pulls.get({
-        ...context.repo,
-        pull_number: parseInt(prNumber, 10),
-      })
-
-      pullRequestNumber = pullRequest.number
-      pullRequestBody = pullRequest.body
-    }
+    const { data: pullRequest } = await octokit.rest.pulls.get({
+      ...context.repo,
+      pull_number: parseInt(prNumber, 10),
+    })
+    const pullRequestBody = pullRequest.body
 
     if (!body.length && !pullRequestBody) {
       throw new Error(
@@ -81,7 +64,7 @@ export async function run() {
     if (body.length) {
       await octokit.rest.pulls.update({
         ...context.repo,
-        pull_number: pullRequestNumber,
+        pull_number: prNumber,
         body,
       })
     } else if (isHtmlCommentTag) {
@@ -91,7 +74,7 @@ export async function run() {
 
       await octokit.rest.pulls.update({
         ...context.repo,
-        pull_number: pullRequestNumber,
+        pull_number: prNumber,
         body: nextPullRequestBody,
       })
     } else {
@@ -99,7 +82,7 @@ export async function run() {
 
       await octokit.rest.pulls.update({
         ...context.repo,
-        pull_number: pullRequestNumber,
+        pull_number: prNumber,
         body: nextPullRequestBody,
       })
     }

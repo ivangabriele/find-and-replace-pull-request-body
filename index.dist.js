@@ -864,7 +864,13 @@ function getProxyUrl(reqUrl) {
         }
     })();
     if (proxyVar) {
-        return new URL(proxyVar);
+        try {
+            return new URL(proxyVar);
+        }
+        catch (_a) {
+            if (!proxyVar.startsWith('http://') && !proxyVar.startsWith('https://'))
+                return new URL(`http://${proxyVar}`);
+        }
     }
     else {
         return undefined;
@@ -1309,6 +1315,19 @@ var tunnel = tunnel$1;
 	                });
 	                this.message.on('end', () => {
 	                    resolve(output.toString());
+	                });
+	            }));
+	        });
+	    }
+	    readBodyBuffer() {
+	        return __awaiter(this, void 0, void 0, function* () {
+	            return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
+	                const chunks = [];
+	                this.message.on('data', (chunk) => {
+	                    chunks.push(chunk);
+	                });
+	                this.message.on('end', () => {
+	                    resolve(Buffer.concat(chunks));
 	                });
 	            }));
 	        });
@@ -84857,8 +84876,11 @@ function fixResponseChunkedTransferBadEnding(request, errorCallback) {
 
 		if (headers['transfer-encoding'] === 'chunked' && !headers['content-length']) {
 			response.once('close', function (hadError) {
+				// tests for socket presence, as in some situations the
+				// the 'socket' event is not triggered for the request
+				// (happens in deno), avoids `TypeError`
 				// if a data listener is still present we didn't end cleanly
-				const hasDataListener = socket.listenerCount('data') > 0;
+				const hasDataListener = socket && socket.listenerCount('data') > 0;
 
 				if (hasDataListener && !hadError) {
 					const err = new Error('Premature close');
@@ -87688,8 +87710,9 @@ github.getOctokit = getOctokit;
 
 async function run() {
   try {
+    const { context } = github;
     const githubToken = core.getInput('githubToken', { required: true });
-    const prNumber = core.getInput('prNumber');
+    const prNumber = parseInt((!!core.getInput('prNumber') ? core.getInput('prNumber') : context?.payload?.pull_request?.number) ?? 0, 10);
     const body = core.getInput('body');
     const find = core.getInput('find');
     const isHtmlCommentTag = core.getInput('isHtmlCommentTag').toLowerCase() === 'true';
@@ -87723,38 +87746,20 @@ async function run() {
       )
     }
 
-    const { context } = github;
     const octokit = github.getOctokit(githubToken);
 
-    if (!context.payload.pull_request && !prNumber) {
+    if (!prNumber) {
       throw new Error(
         'You must either trigger this action from a pull request, or manually set the `prNumber` input\n' +
           'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
       )
     }
 
-    if (context.payload.pull_request && prNumber) {
-      throw new Error(
-        "You can't use `prNumber` while in the context of a pull request event.\n" +
-          'Please check your setup: https://github.com/ivangabriele/find-and-replace-pull-request-body#usage',
-      )
-    }
-
-    let pullRequestNumber;
-    let pullRequestBody;
-
-    if (context.payload.pull_request) {
-      pullRequestNumber = context.payload.pull_request.number;
-      pullRequestBody = context.payload.pull_request.body;
-    } else {
-      const { data: pullRequest } = await octokit.rest.pulls.get({
-        ...context.repo,
-        pull_number: parseInt(prNumber, 10),
-      });
-
-      pullRequestNumber = pullRequest.number;
-      pullRequestBody = pullRequest.body;
-    }
+    const { data: pullRequest } = await octokit.rest.pulls.get({
+      ...context.repo,
+      pull_number: parseInt(prNumber, 10),
+    });
+    const pullRequestBody = pullRequest.body;
 
     if (!body.length && !pullRequestBody) {
       throw new Error(
@@ -87766,7 +87771,7 @@ async function run() {
     if (body.length) {
       await octokit.rest.pulls.update({
         ...context.repo,
-        pull_number: pullRequestNumber,
+        pull_number: prNumber,
         body,
       });
     } else if (isHtmlCommentTag) {
@@ -87776,7 +87781,7 @@ async function run() {
 
       await octokit.rest.pulls.update({
         ...context.repo,
-        pull_number: pullRequestNumber,
+        pull_number: prNumber,
         body: nextPullRequestBody,
       });
     } else {
@@ -87784,7 +87789,7 @@ async function run() {
 
       await octokit.rest.pulls.update({
         ...context.repo,
-        pull_number: pullRequestNumber,
+        pull_number: prNumber,
         body: nextPullRequestBody,
       });
     }
