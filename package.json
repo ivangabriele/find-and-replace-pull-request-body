@@ -14,7 +14,7 @@
   "devDependencies": {
     "@actions/core": "1.10.0",
     "@actions/github": "5.1.1",
-    "@ivangabriele/prettier-config": "3.1.0",
+    "@ivangabriele/prettier-config": "5.0.1",
     "@rollup/plugin-commonjs": "25.0.0",
     "@rollup/plugin-json": "6.0.0",
     "@rollup/plugin-node-resolve": "15.0.2",
