@@ -20,5 +20,5 @@ inputs:
   replace:
     description: 'Replacement string in Pull Request body'
 runs:
-  using: node16
+  using: node20
   main: ./index.dist.js
